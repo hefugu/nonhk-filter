@@ -1,10 +1,4 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<title>NoNHK Filter Privacy Policy</title>
-</head>
-<body>
+
 <h1>プライバシーポリシー</h1>
 
 <p>NoNHK Filter（以下、本拡張機能）は、ユーザーの個人情報を収集しません。</p>
