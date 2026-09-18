@@ -41,8 +41,14 @@
 
 
 .cashSetup{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.cashSetup label{display:grid;gap:5px;font-size:10px;font-weight:900;color:#8e99a3;letter-spacing:.05em}.cashSetup select{padding:10px 11px}.playOnly{margin-top:10px;padding:8px 10px;border:1px solid #385548;background:#0c1712;color:#a9c9b8;font-size:10px;font-weight:850;line-height:1.45}.sessionTag{display:inline-block;margin-left:5px;font-size:9px;font-weight:900}.sessionTag.up{color:#6ff5a4}.sessionTag.down{color:#ff8995}.sessionTag.flat{color:#8e9aa4}.rebuyBar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-top:9px;padding:8px 10px;border:1px solid #40351e;background:#18140b}.rebuyBar strong{font-size:12px}.rebuyBar span{font-size:10px;color:#aaa08a}.rebuyBtn{height:38px;padding:0 13px;border:1px solid #b88a35;background:#2b2110;color:#ffe0a2;border-radius:8px;font-weight:1000}.dealRow{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch}.gameHeader .playBadge{font-size:9px;font-weight:1000;letter-spacing:.08em;padding:5px 7px;border-radius:999px;border:1px solid #386047;color:#aee7c3;background:#0d1711}@media(max-width:620px){.cashSetup{grid-template-columns:1fr}.dealRow{grid-template-columns:1fr}.rebuyBar{grid-template-columns:1fr}}
+
+/* v7 hand-resolution choreography */
+.muckSpot{position:absolute;left:69%;top:61%;transform:translate(-50%,-50%) rotate(-6deg);width:54px;height:32px;border:1px dashed #ffffff28;border-radius:6px;color:#ffffff2f;font-size:8px;font-weight:1000;letter-spacing:.12em;display:grid;place-items:center;z-index:1}.muckGhost{position:fixed!important;z-index:1000!important;pointer-events:none!important;margin:0!important;will-change:transform,opacity}.showdownReveal{backface-visibility:hidden;transform-origin:center;animation:showdownReveal .55s cubic-bezier(.2,.75,.2,1) both;will-change:transform,opacity}.resultReveal{opacity:0;animation:resultReveal .35s ease 1.15s forwards}.resolvingNote{display:grid;place-items:center;min-height:76px;color:#d9c692;font-size:12px;font-weight:900;letter-spacing:.08em}.realTable.resolving{box-shadow:inset 0 0 0 3px #4a3020,inset 0 0 80px #02180f,0 28px 70px #000b,0 0 38px #d5b45a20}.casinoSeat.winnerReveal .seatBox,.heroSeat.winnerReveal .heroMeta{animation:winnerReveal .8s ease 2}.heroHoleCards.throwing .card{pointer-events:none}.showdownTag{position:absolute;left:50%;top:36%;transform:translate(-50%,-50%);z-index:12;padding:6px 10px;border-radius:999px;background:#07110dcc;border:1px solid #d2b863;color:#ffe8aa;font-size:9px;font-weight:1000;letter-spacing:.12em;opacity:0;animation:showTag .3s ease .72s forwards}
+@keyframes showdownReveal{0%{opacity:.15;transform:rotateY(92deg) scale(.92)}55%{opacity:1}100%{opacity:1;transform:rotateY(0) scale(1)}}@keyframes resultReveal{from{opacity:0;transform:translate(-50%,7px)}to{opacity:1;transform:translate(-50%,0)}}@keyframes winnerReveal{0%,100%{filter:none}50%{filter:drop-shadow(0 0 13px #ffd76e);transform:scale(1.025)}}@keyframes showTag{from{opacity:0;transform:translate(-50%,-42%) scale(.92)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@media(max-width:760px){.muckSpot{left:70%;top:62%;width:42px;height:27px}.showdownTag{top:35%}}
+
 </style></head><body><div id="app"></div><script>
-const API='https://bwassrcmnzwzrxvwuiyo.supabase.co/functions/v1/poker-api';const app=document.getElementById('app');let room=new URLSearchParams(location.search).get('room')||'';room=room.toUpperCase();let state=null,busy=false,timer=null,selected=new Set(),prevView={handNo:null,phase:null,pot:null,community:0,turn:null,result:''},toastTimer=null,lastDisplayedActionId=null,actionHideTimer=null,lastStateSig='';
+const API='https://bwassrcmnzwzrxvwuiyo.supabase.co/functions/v1/poker-api';const app=document.getElementById('app');let room=new URLSearchParams(location.search).get('room')||'';room=room.toUpperCase();let state=null,busy=false,timer=null,selected=new Set(),prevView={handNo:null,phase:null,pot:null,community:0,turn:null,result:''},toastTimer=null,lastDisplayedActionId=null,actionHideTimer=null,lastStateSig='',resolvingHand=false,seenActionIds=new Set(),resolutionTimer=null;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));const tokenKey=c=>'poker-v2:'+c+':token';const newToken=()=>crypto.randomUUID()+'-'+crypto.randomUUID();
 async function req(path,opt={}){const r=await fetch(API+path,opt),d=await r.json().catch(()=>({error:'Server response error'}));if(!r.ok)throw new Error(d.error||'Failed');return d}
 function err(m){const e=document.getElementById('err');if(e){e.textContent=m||'';e.style.display=m?'block':'none'}}
@@ -59,8 +65,7 @@ function actionText(a){
   return '';
 }
 function showActionBanner(a){
-  if(!a||a.type==='start'||!a.id||a.id===lastDisplayedActionId)return;
-  lastDisplayedActionId=a.id;
+  if(!a||a.type==='start'||!a.id)return;
   clearTimeout(actionHideTimer);
   document.querySelectorAll('.seatActionBubble').forEach(x=>x.remove());
   const target=a.playerId===state?.meId?document.querySelector('.heroSeat'):document.querySelector('[data-player-id="'+a.playerId+'"]');
@@ -69,14 +74,58 @@ function showActionBanner(a){
   bubble.className='seatActionBubble '+a.type;
   bubble.textContent=actionText(a);
   target.appendChild(bubble);
-  actionHideTimer=setTimeout(()=>{if(bubble.isConnected)bubble.remove()},1250);
+  actionHideTimer=setTimeout(()=>{if(bubble.isConnected)bubble.remove()},950);
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function animateFoldPress(){
-  const hand=document.querySelector('.yourCards');
-  if(!hand)return;
-  hand.classList.add('foldingCards');
+  const cards=[...document.querySelectorAll('.heroHoleCards .card')],muck=document.querySelector('.muckSpot');
+  if(!cards.length||!muck){await sleep(260);return}
+  const mr=muck.getBoundingClientRect();
+  document.querySelector('.heroHoleCards')?.classList.add('throwing');
+  cards.forEach((c,i)=>{
+    const r=c.getBoundingClientRect(),dx=mr.left+mr.width/2-(r.left+r.width/2)+(i?7:-7),dy=mr.top+mr.height/2-(r.top+r.height/2)+(i?3:-3);
+    c.animate([{transform:'translate(0,0) rotate(0) scale(1)',opacity:1},{transform:`translate(${dx*.55}px,${dy*.45-18}px) rotate(${i?8:-8}deg) scale(.9)`,opacity:.96,offset:.55},{transform:`translate(${dx}px,${dy}px) rotate(${i?22:-22}deg) scale(.58)`,opacity:.12}],{duration:520,delay:i*45,easing:'cubic-bezier(.35,.05,.7,.25)',fill:'forwards'});
+  });
+  await sleep(560);
+}
+function animateOpponentMuck(playerId){
+  const seat=document.querySelector('[data-player-id="'+playerId+'"]'),muck=document.querySelector('.muckSpot');
+  if(!seat||!muck)return;
+  const sr=seat.getBoundingClientRect(),mr=muck.getBoundingClientRect();
+  for(let i=0;i<2;i++){
+    const c=document.createElement('div');c.className='card back muckGhost';
+    const w=27,h=38;c.style.width=w+'px';c.style.height=h+'px';
+    const left=sr.left+sr.width/2-w/2+(i?7:-7),top=sr.top+sr.height*.68-h/2+(i?2:-2);
+    c.style.left=left+'px';c.style.top=top+'px';document.body.appendChild(c);
+    const dx=mr.left+mr.width/2-(left+w/2)+(i?6:-6),dy=mr.top+mr.height/2-(top+h/2);
+    c.animate([{transform:'translate(0,0) rotate(0) scale(1)',opacity:1},{transform:`translate(${dx*.55}px,${dy*.45-12}px) rotate(${i?10:-10}deg) scale(.9)`,opacity:.95,offset:.55},{transform:`translate(${dx}px,${dy}px) rotate(${i?25:-25}deg) scale(.55)`,opacity:0}],{duration:520,delay:i*45,easing:'cubic-bezier(.35,.05,.7,.25)',fill:'forwards'}).finished.finally(()=>c.remove());
+  }
+}
+async function playTableEvents(actions){
+  for(const a of actions){
+    if(a.type==='fold'&&a.playerId!==state?.meId)animateOpponentMuck(a.playerId);
+    showActionBanner(a);
+    await sleep(a.type==='fold'?560:360);
+  }
+}
+function revealWinners(){
+  const ws=state?.lastResult?.winners||[];
+  ws.forEach(w=>{
+    const el=w.playerId===state.meId?document.querySelector('.heroSeat'):document.querySelector('[data-player-id="'+w.playerId+'"]');
+    if(el){el.classList.add('winnerReveal');setTimeout(()=>el.classList.remove('winnerReveal'),1600)}
+  });
+}
+async function runHandResolution(newActions){
+  clearTimeout(resolutionTimer);
+  if(newActions.length)await playTableEvents(newActions);
   await sleep(520);
+  revealWinners();
+  await sleep(500);
+  const ws=state?.lastResult?.winners||[];
+  ws.forEach((w,i)=>setTimeout(()=>animatePotToWinner(w.playerId,w.amount),i*160));
+  await sleep(900);
+  resolvingHand=false;
+  render();
 }
 function animatePotToWinner(winnerId,amount){
   const pot=document.querySelector('.potReal');
@@ -96,12 +145,7 @@ function animatePotToWinner(winnerId,amount){
   }
   target.classList.add('winnerMoment');
   setTimeout(()=>target.classList.remove('winnerMoment'),1500);
-  const banner=document.createElement('div');
-  banner.className='resolutionBanner';
-  const winner=state.players.find(p=>p.id===winnerId);
-  banner.innerHTML='<strong>'+esc(winner?.name||'WINNER')+' WIN</strong>POT '+Number(amount||0);
-  stage.appendChild(banner);
-  setTimeout(()=>banner.remove(),1350);
+
 }
 function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
 function niceTarget(n,min,max){if(max<=0)return 0;return clamp(Math.round(n),Math.min(min,max),max)}
@@ -114,10 +158,11 @@ function home(){if(timer)clearInterval(timer);const name=localStorage.getItem('p
 function card(c,hidden=false,i=null,pickable=false,extra='',delay=0){const style=delay>0?` style="animation-delay:${delay}ms"`:'';if(hidden)return `<div class="card back ${extra}"${style}></div>`;const suit={S:'♠',H:'♥',D:'♦',C:'♣'},s=c?.[1],r=c?.[0],rank=r==='T'?'10':(r||''),pick=i!==null&&selected.has(i);return `<div class="card ${(s==='H'||s==='D')?'red':''} ${pick?'pick':''} ${extra}"${style} ${pickable?`data-card-index="${i}"`:''}>${esc(rank+(suit[s]||''))}</div>`}
 function phaseName(){return ({lobby:'待機中',preflop:'プリフロップ',flop:'フロップ',turn:'ターン',river:'リバー',draw_bet1:'交換前ベット',draw_select:'カード交換',draw_bet2:'交換後ベット',showdown:'ショーダウン'})[state.phase]||state.phase}
 function render(){
- const me=state.players.find(p=>p.id===state.meId),ai=state.actionInfo||{},myTurn=!!ai.isTurn,host=state.hostPlayerId===state.meId,canStart=host&&['lobby','showdown'].includes(state.phase)&&state.players.filter(p=>p.chips>0).length>=2;
+ const enteringShowdown=prevView.phase!==null&&prevView.phase!=='showdown'&&state.phase==='showdown';if(enteringShowdown)resolvingHand=true;
+ const me=state.players.find(p=>p.id===state.meId),ai=state.actionInfo||{},myTurn=!!ai.isTurn,host=state.hostPlayerId===state.meId,canStart=!resolvingHand&&host&&['lobby','showdown'].includes(state.phase)&&state.players.filter(p=>p.chips>0).length>=2;
  const call=Number(ai.callAmount??(me?Math.max(0,state.currentBet-me.currentBet):0)),min=Number(ai.minRaiseTo??(state.currentBet+state.minRaise)),max=Number(ai.maxRaiseTo??(me?me.currentBet+me.chips:0)),isDraw=state.gameType==='draw',drawing=isDraw&&state.phase==='draw_select'&&me&&!me.drawDone&&!me.folded;
  const newHand=prevView.handNo===null||prevView.handNo!==state.handNo,boardNew=state.communityCards.length>prevView.community,potChanged=prevView.pot!==null&&prevView.pot!==state.pot,resultChanged=!!state.lastResult&&state.lastResult.text!==prevView.result;
- const allActions=state.recentActions||[],newestAction=allActions.length?allActions[allActions.length-1]:null,winnerIds=new Set((state.lastResult?.winners||[]).map(w=>w.playerId));
+ const allActions=state.recentActions||[],newestAction=allActions.length?allActions[allActions.length-1]:null,winnerIds=new Set((state.lastResult?.winners||[]).map(w=>w.playerId));const initialView=prevView.handNo===null;const freshActions=initialView?[]:allActions.filter(a=>a.id&&!seenActionIds.has(a.id)&&a.type!=='start');allActions.forEach(a=>{if(a.id)seenActionIds.add(a.id)});
  const handPlayers=state.players.filter(p=>p.inHand).sort((a,b)=>a.seat-b.seat);
  const nextHandSeat=after=>{if(!handPlayers.length)return null;return handPlayers.find(p=>p.seat>after)?.seat??handPlayers[0].seat};
  let sbSeat=null,bbSeat=null;
@@ -131,7 +176,7 @@ function render(){
  let seatsHtml='',betsHtml='';
  clockwise.forEach((p,i)=>{const pos=seatPos(i,clockwise.length),bp=betPos(pos);let holes='';
    if(p.folded)holes='';
-   else if(p.holeCards?.length)holes=p.holeCards.map((c,ci)=>card(c,false,null,false,newHand?'dealFromDeck':'',newHand?dealIndex(p.seat,ci)*65:0)).join('');
+   else if(p.holeCards?.length){const revealIdx=Math.max(0,clockwise.filter(x=>x.inHand&&!x.folded&&x.holeCards?.length).findIndex(x=>x.id===p.id));holes=p.holeCards.map((c,ci)=>card(c,false,null,false,enteringShowdown?'showdownReveal':newHand?'dealFromDeck':'',enteringShowdown?(650+revealIdx*430+ci*90):(newHand?dealIndex(p.seat,ci)*65:0))).join('');}
    else if(p.inHand)holes=Array(isDraw?5:2).fill(0).map((_,ci)=>card('',true,null,false,newHand?'dealFromDeck':'',newHand?dealIndex(p.seat,ci)*65:0)).join('');
    const tag=p.allIn?'<span class="positionTag tagAll">ALL IN</span>':p.seat===state.currentTurnSeat?'<span class="positionTag tagTurn">ACT</span>':roleHtml(p);
    seatsHtml+=`<div data-player-id="${p.id}" class="casinoSeat ${p.seat===state.currentTurnSeat?'turn ':''}${p.folded?'fold ':''}${p.allIn?'allin ':''}${winnerIds.has(p.id)?'winner ':''}" style="left:${pos.x}%;top:${pos.y}%"><div class="seatBox"><div class="seatLine"><span class="seatName">${esc(p.name)}</span>${tag}</div><div class="seatStack">${p.chips} <small>chips</small><span class="sessionTag ${p.sessionNet>0?'up':p.sessionNet<0?'down':'flat'}">${p.sessionNet>0?'+':''}${p.sessionNet||0}</span></div><div class="seatHole">${holes}</div></div></div>`;
@@ -145,7 +190,8 @@ function render(){
  const heroRole=me?roleHtml(me):'';const canRebuy=!!me&&['lobby','showdown'].includes(state.phase)&&me.chips<Number(state.buyIn||0);const rebuyHtml=canRebuy?`<div class="rebuyBar"><div><strong>TOP UP TO ${state.buyIn}</strong><br><span>無料プレイチップを開始スタックまで補充</span></div><button class="rebuyBtn" data-act="rebuy">TOP UP +${state.buyIn-me.chips}</button></div>`:'';
  const heroBet=me?.currentBet>0&&!me?.folded?`<div class="heroBet"><div class="tableBet" style="position:relative;left:auto;top:auto;transform:none"><span class="chipStack"><i class="chipCoin"></i><i class="chipCoin"></i><i class="chipCoin"></i></span><span class="betValue">${me.currentBet}</span></div></div>`:'';
  let controls='';
- if(canStart){
+ if(resolvingHand){controls='<div class="resolvingNote">SHOWDOWN — resolving hand…</div>'}
+ else if(canStart){
    controls=`<div class="controlTop"><div><div class="controlPrompt">次のハンド</div><div class="controlInfo">SB ${state.smallBlind} / BB ${state.bigBlind} · BUY-IN ${state.buyIn} (${state.buyInBB}BB)</div></div></div><div class="dealRow"><button class="betConfirm" data-act="start_hand">DEAL</button></div>${rebuyHtml}`;
  }else if(drawing){
    controls=`<div class="controlTop"><div><div class="controlPrompt">交換するカードを選択</div><div class="controlInfo">0〜5枚 / 選択中 ${selected.size}枚</div></div></div><button class="betConfirm" id="drawBtn">${selected.size===0?'STAND PAT':selected.size+'枚交換'}</button>`;
@@ -162,7 +208,7 @@ function render(){
    controls=`<div class="spectateLine">${state.phase==='lobby'?'Waiting for deal…':state.phase==='showdown'?'Hand complete':state.phase==='draw_select'?'Waiting for draw…':who?`Waiting for ${esc(who.name)}…`:'Dealing…'}</div>${rebuyHtml}`;
  }
  const online=state.playMode==='online';
- app.innerHTML=`<main class="shell"><header class="gameHeader"><div class="gameTitle"><h2>${state.gameType==='texas'?'NL TEXAS HOLD’EM':'FIVE CARD DRAW'}</h2><span class="roundPill">${state.smallBlind}/${state.bigBlind}</span><span class="playBadge">PLAY CHIPS · ${state.buyInBB||100}BB</span>${online?`<button id="copy" class="roomCode">${esc(state.code)}</button>`:''}</div><div class="stats"><span class="pill">HAND ${state.handNo}</span></div></header><div id="err" class="error" style="display:none;max-width:1100px;margin:8px auto"></div><div class="realTableWrap"><section class="pokerStage realTable">${potChanged?'<span class="chipfly"></span>':''}<div class="dealerTray">DEALER</div><div class="deckStack"></div><div class="feltMark">${isDraw?'FIVE CARD DRAW':'NO LIMIT TEXAS HOLD’EM'}</div>${seatsHtml}${betsHtml}<div class="boardCenter"><div class="potReal">POT <strong>${state.pot}</strong></div><div class="boardCards">${board}</div><div class="streetLabel">${phaseName()}</div></div>${heroBet}<div class="heroSeat"><div class="heroSeatBox"><div class="heroMeta"><span class="heroName">${esc(me?.name||'YOU')}</span>${me?.allIn?'<span class="positionTag tagAll">ALL IN</span>':heroRole}<span class="heroStack">${me?.chips||0} chips <span class="sessionTag ${(me?.sessionNet||0)>0?'up':(me?.sessionNet||0)<0?'down':'flat'}">SESSION ${(me?.sessionNet||0)>0?'+':''}${me?.sessionNet||0}</span></span></div><div class="heroHoleCards yourCards ${me?.folded?'foldedHand':''}">${heroCards}</div>${me?.folded?'<div class="foldedLabel">MUCKED</div>':''}</div></div>${state.lastResult?`<div class="showdownLine">${esc(state.lastResult.text)}</div>`:''}</section></div><section class="casinoControls">${controls}</section><p class="fine"><a class="home" href="${location.pathname}">ロビーへ</a> · PLAY CHIPS ONLY · ¥0 CASH VALUE · NOT PURCHASABLE · NOT REDEEMABLE · NOT TRANSFERABLE</p></main>`;
+ app.innerHTML=`<main class="shell"><header class="gameHeader"><div class="gameTitle"><h2>${state.gameType==='texas'?'NL TEXAS HOLD’EM':'FIVE CARD DRAW'}</h2><span class="roundPill">${state.smallBlind}/${state.bigBlind}</span><span class="playBadge">PLAY CHIPS · ${state.buyInBB||100}BB</span>${online?`<button id="copy" class="roomCode">${esc(state.code)}</button>`:''}</div><div class="stats"><span class="pill">HAND ${state.handNo}</span></div></header><div id="err" class="error" style="display:none;max-width:1100px;margin:8px auto"></div><div class="realTableWrap"><section class="pokerStage realTable ${resolvingHand?'resolving':''}">${potChanged?'<span class="chipfly"></span>':''}<div class="dealerTray">DEALER</div><div class="deckStack"></div><div class="muckSpot">MUCK</div>${enteringShowdown?'<div class="showdownTag">SHOWDOWN</div>':''}<div class="feltMark">${isDraw?'FIVE CARD DRAW':'NO LIMIT TEXAS HOLD’EM'}</div>${seatsHtml}${betsHtml}<div class="boardCenter"><div class="potReal">POT <strong>${state.pot}</strong></div><div class="boardCards">${board}</div><div class="streetLabel">${phaseName()}</div></div>${heroBet}<div class="heroSeat"><div class="heroSeatBox"><div class="heroMeta"><span class="heroName">${esc(me?.name||'YOU')}</span>${me?.allIn?'<span class="positionTag tagAll">ALL IN</span>':heroRole}<span class="heroStack">${me?.chips||0} chips <span class="sessionTag ${(me?.sessionNet||0)>0?'up':(me?.sessionNet||0)<0?'down':'flat'}">SESSION ${(me?.sessionNet||0)>0?'+':''}${me?.sessionNet||0}</span></span></div><div class="heroHoleCards yourCards ${me?.folded?'foldedHand':''}">${heroCards}</div>${me?.folded?'<div class="foldedLabel">MUCKED</div>':''}</div></div>${state.lastResult?`<div class="showdownLine ${enteringShowdown?'resultReveal':''}">${esc(state.lastResult.text)}</div>`:''}</section></div><section class="casinoControls">${controls}</section><p class="fine"><a class="home" href="${location.pathname}">ロビーへ</a> · PLAY CHIPS ONLY · ¥0 CASH VALUE · NOT PURCHASABLE · NOT REDEEMABLE · NOT TRANSFERABLE</p></main>`;
  if(online)document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(location.origin+location.pathname+'?room='+state.code).then(()=>toast('招待リンクをコピーしました'));
  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>act({type:b.dataset.act}));
  document.querySelectorAll('[data-card-index]').forEach(c=>c.onclick=()=>{const i=Number(c.dataset.cardIndex);if(selected.has(i))selected.delete(i);else if(selected.size<5)selected.add(i);render()});
@@ -174,9 +220,9 @@ function render(){
  const rb=document.getElementById('raiseBtn');if(rb)rb.onclick=()=>{const v=Number(document.getElementById('raise').value);const legalMin=ai.shortAllInOnly?max:min;if(v<legalMin||v>max)return err(`レイズ額は ${legalMin} ～ ${max}`);act({type:'raise',amount:v})};
  const or=document.getElementById('openRaise');if(or)or.onclick=()=>document.querySelector('.betControls')?.scrollIntoView({behavior:'smooth',block:'nearest'});
  window.__prevPlayers=state.players.map(p=>({id:p.id,handBet:p.handBet}));
- prevView={handNo:state.handNo,phase:state.phase,pot:state.pot,community:state.communityCards.length,turn:state.currentTurnSeat,result:state.lastResult?.text||''};showActionBanner(newestAction);
+ prevView={handNo:state.handNo,phase:state.phase,pot:state.pot,community:state.communityCards.length,turn:state.currentTurnSeat,result:state.lastResult?.text||''};if(enteringShowdown){runHandResolution(freshActions)}else if(freshActions.length){playTableEvents(freshActions)}
 }
 async function load(){const t=localStorage.getItem(tokenKey(room));if(!t){home();return}try{const next=await req('/api/room/'+room,{headers:{'x-player-token':t},cache:'no-store'});const sig=JSON.stringify(next);if(sig===lastStateSig)return;state=next;lastStateSig=sig;render();err('')}catch(e){if(e.message==='Not joined'){localStorage.removeItem(tokenKey(room));home()}else err(e.message)}}
-async function act(a){if(busy)return;busy=true;try{if(a.type==='fold')await animateFoldPress();const t=localStorage.getItem(tokenKey(room));const next=await req('/api/room/'+room+'/action',{method:'POST',headers:{'content-type':'application/json','x-player-token':t},body:JSON.stringify(a)});state=next;lastStateSig=JSON.stringify(next);selected.clear();render();if(a.type==='fold'&&state.phase==='showdown'&&state.lastResult?.winners?.length){await sleep(220);const w=state.lastResult.winners[0];animatePotToWinner(w.playerId,w.amount);await sleep(1250)}}catch(e){err(e.message);await load()}finally{busy=false}}
+async function act(a){if(busy)return;busy=true;try{if(a.type==='fold')await animateFoldPress();const t=localStorage.getItem(tokenKey(room));const next=await req('/api/room/'+room+'/action',{method:'POST',headers:{'content-type':'application/json','x-player-token':t},body:JSON.stringify(a)});state=next;lastStateSig=JSON.stringify(next);selected.clear();render()}catch(e){err(e.message);await load()}finally{busy=false}}
 if(room&&localStorage.getItem(tokenKey(room))){app.innerHTML='<div class="loading">接続中...</div>';load();timer=setInterval(()=>{if(!busy&&!document.hidden)load()},1500)}else home();
 </script></body></html>
