@@ -76,7 +76,7 @@ async function animateFoldPress(){
   await sleep(520);
 }
 function animatePotToWinner(winnerId,amount){
-  const pot=document.querySelector('.potBox');
+  const pot=document.querySelector('.potReal');
   const target=winnerId===state?.meId?document.querySelector('.heroSeat'):document.querySelector('[data-player-id="'+winnerId+'"]');
   const stage=document.querySelector('.pokerStage');
   if(!pot||!target||!stage)return;
@@ -119,8 +119,7 @@ function render(){
  const nextHandSeat=after=>{if(!handPlayers.length)return null;return handPlayers.find(p=>p.seat>after)?.seat??handPlayers[0].seat};
  let sbSeat=null,bbSeat=null;
  if(handPlayers.length>=2){const heads=handPlayers.length===2;sbSeat=heads?state.dealerSeat:nextHandSeat(state.dealerSeat);bbSeat=nextHandSeat(sbSeat)}
- const roleFor=p=>p.seat===state.dealerSeat?'D':p.seat===sbSeat?'SB':p.seat===bbSeat?'BB':'';
- const roleHtml=p=>{const r=roleFor(p);return r?`<span class="positionTag tag${r}">${r}</span>`:''};
+ const roleHtml=p=>{let out='';if(p.seat===state.dealerSeat)out+='<span class="positionTag tagD">D</span>';if(p.seat===sbSeat)out+='<span class="positionTag tagSB">SB</span>';if(p.seat===bbSeat)out+='<span class="positionTag tagBB">BB</span>';return out};
  const clockwise=[...state.players.filter(p=>p.id!==state.meId)].sort((a,b)=>{const da=(a.seat-(me?.seat??0)+100)%100,db=(b.seat-(me?.seat??0)+100)%100;return da-db});
  const seatPos=(i,n)=>{const angle=n===1?270:(200+(140*i/Math.max(1,n-1)));const rad=angle*Math.PI/180;return {x:50+43*Math.cos(rad),y:50+37*Math.sin(rad)}};
  const betPos=pos=>({x:50+(pos.x-50)*.57,y:50+(pos.y-50)*.57});
